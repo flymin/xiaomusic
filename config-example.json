@@ -16,6 +16,7 @@
   "search_prefix": "bilisearch:",
   "ffmpeg_location": "./ffmpeg/bin",
   "active_cmd": "play,set_random_play,playlocal,play_music_list,stop",
+  "mute_cmd": "play,playlocal,play_music_list,play_music_list_index",
   "exclude_dirs": "@eaDir",
   "music_path_depth": 10,
   "disable_httpauth": true,

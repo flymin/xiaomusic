@@ -397,7 +397,7 @@ def no_padding(info):
     return 0
 
 
-def remove_id3_tags(file_path):
+async def remove_id3_tags(file_path):
     audio = MP3(file_path, ID3=ID3)
     change = False
 
@@ -425,7 +425,7 @@ def remove_id3_tags(file_path):
     return change
 
 
-def convert_file_to_mp3(input_file: str, ffmpeg_location: str, music_path: str) -> str:
+async def convert_file_to_mp3(input_file: str, ffmpeg_location: str, music_path: str) -> str:
     """
     Convert the music file to MP3 format and return the path of the temporary MP3 file.
     """

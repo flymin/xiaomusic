@@ -156,6 +156,7 @@ class XiaoMusic:
             self.public_port = self.port
 
         self.active_cmd = self.config.active_cmd.split(",")
+        self.mute_cmd = self.config.mute_cmd.split(",")
         self.exclude_dirs = set(self.config.exclude_dirs.split(","))
         self.music_path_depth = self.config.music_path_depth
         self.remove_id3tag = self.config.remove_id3tag
@@ -403,7 +404,7 @@ class XiaoMusic:
     # 获取歌曲播放时长，播放地址
     async def get_music_sec_url(self, name):
         sec = 0
-        url = self.get_music_url(name)
+        url = await self.get_music_url(name)
         self.log.info(f"get_music_sec_url. name:{name} url:{url}")
         if self.is_web_radio_music(name):
             self.log.info("电台不会有播放时长")
@@ -444,7 +445,7 @@ class XiaoMusic:
             )
         return tags
 
-    def get_music_url(self, name):
+    async def get_music_url(self, name):
         if self.is_web_music(name):
             url = self.all_music[name]
             self.log.info(f"get_music_url web music. name:{name}, url:{url}")
@@ -454,7 +455,7 @@ class XiaoMusic:
         # 移除MP3 ID3 v2标签和填充，减少播放前延迟
         if self.remove_id3tag and is_mp3(filename):
             self.log.info(f"remove_id3tag:{self.remove_id3tag}, is_mp3:True ")
-            change = remove_id3_tags(filename)
+            change = await remove_id3_tags(filename)
             if change:
                 self.log.info("ID3 tag removed, orgin mp3 file saved as bak")
             else:
@@ -463,7 +464,7 @@ class XiaoMusic:
         # 如果开启了MP3转换功能，且文件不是MP3格式，则进行转换
         if self.convert_to_mp3 and not is_mp3(filename):
             self.log.info(f"convert_to_mp3 is enabled. Checking file: {filename}")
-            temp_mp3_file = convert_file_to_mp3(
+            temp_mp3_file = await convert_file_to_mp3(
                 filename, self.config.ffmpeg_location, self.config.music_path
             )
             if temp_mp3_file:
@@ -721,6 +722,36 @@ class XiaoMusic:
                     await self.reset_timer_when_answer(len(answer), did)
                     self.log.debug(f"query:{query} did:{did} answer:{answer}")
 
+    async def try_break_future_music_play_loop(
+        self, did, no_condition=False, timeout=8
+    ):
+        self.log.info("try_break_future_music_play_loop 进入")
+        # 打断语音，阻塞执行
+        await asyncio.create_task(
+            self.mina_service.player_pause(self.devices[did].device_id))
+        task_tts = asyncio.create_task(self.do_tts(did, "小爱收到"))
+        # active_cmd 就是要播放新的，一律打断
+        # if self.isplaying(did):
+        #     self.log.info("try_break_future_music_play_loop 直接退出")
+        #     return
+
+        # 开始监控官方音乐并尝试打断
+        enter_time = time.time()
+        while not self.isplaying(did) and time.time() - enter_time < timeout:
+            if no_condition or await self.devices[did].get_if_xiaoai_is_playing():
+                await self.mina_service.player_pause(self.devices[did].device_id)
+                self.log.info(
+                    f"try_break_future_music_play_loop player_stop device_id:{did}"
+                )
+                break
+            self.log.info("try_break_future_music_play_loop not yet")
+            task_sleep = asyncio.sleep(1)
+            if not task_tts.done():
+                await task_tts
+            await task_sleep
+        else:
+            self.log.info("try_break_future_music_play_loop 退出，未尝试打断")
+
     # 匹配命令
     async def do_check_cmd(self, did="", query="", ctrl_panel=True, **kwargs):
         self.log.info(f"收到消息:{query} 控制面板:{ctrl_panel} did:{did}")
@@ -731,8 +762,15 @@ class XiaoMusic:
                 await self.check_replay(did)
                 return
 
+            task = None
+            if self.mute_cmd and opvalue in self.mute_cmd:
+                # 强制打断，直到xiaomusic开始或者超时
+                task = asyncio.create_task(
+                    self.try_break_future_music_play_loop(did))
             func = getattr(self, opvalue)
             await func(did=did, arg1=oparg)
+            if task:
+                await task
         except Exception as e:
             self.log.exception(f"Execption {e}")
 
@@ -816,7 +854,7 @@ class XiaoMusic:
         self.log.info(f"未匹配到指令 {query} {ctrl_panel}")
         return (None, None)
 
-    def find_real_music_name(self, name, n=100):
+    async def find_real_music_name(self, name, n=100):
         if not self.config.enable_fuzzy_match:
             self.log.debug("没开启模糊匹配")
             return name
@@ -1242,9 +1280,9 @@ class XiaoMusicDevice:
 
         # 本地歌曲不存在时下载
         if exact:
-            names = self.xiaomusic.find_real_music_name(name, n=1)
+            names = await self.xiaomusic.find_real_music_name(name, n=1)
         else:
-            names = self.xiaomusic.find_real_music_name(name)
+            names = await self.xiaomusic.find_real_music_name(name)
         if len(names) > 0:
             if update_cur and len(names) > 1:  # 大于一首歌才更新
                 self._play_list = names
