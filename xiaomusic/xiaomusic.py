@@ -728,7 +728,8 @@ class XiaoMusic:
         self.log.info("try_break_future_music_play_loop 进入")
         # 打断语音，阻塞执行
         await asyncio.create_task(
-            self.mina_service.player_pause(self.devices[did].device_id))
+            self.mina_service.player_pause(self.devices[did].device_id)
+        )
         task_tts = asyncio.create_task(self.do_tts(did, "小爱收到"))
         # active_cmd 就是要播放新的，一律打断
         # if self.isplaying(did):
@@ -765,8 +766,7 @@ class XiaoMusic:
             task = None
             if self.mute_cmd and opvalue in self.mute_cmd:
                 # 强制打断，直到xiaomusic开始或者超时
-                task = asyncio.create_task(
-                    self.try_break_future_music_play_loop(did))
+                task = asyncio.create_task(self.try_break_future_music_play_loop(did))
             func = getattr(self, opvalue)
             await func(did=did, arg1=oparg)
             if task:
